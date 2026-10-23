@@ -692,7 +692,7 @@ dash.calc('team_kpi', {
 dash.calc('by_owner', {
   inputs: ['sheet'],
   title: '담당자별 실적',
-  description: '담당자별로 거래선 행의 26년 목표와 YTD를 더하고 달성률을 구합니다.',
+  description: '담당자별로 거래선 행의 26년 목표와 YTD를 더하고 달성률을 구합니다. 순서는 이소진, 김주은, 사키, 김태원.',
   fn: (sheet) => {
     const m = new Map();
     for (const r of sheet) {
@@ -701,7 +701,11 @@ dash.calc('by_owner', {
       o.목표_26 += r.목표_26 || 0; o.YTD += r.YTD || 0; o.월목표 += r.월목표 || 0; o.월FCST += r.월FCST || 0; o.거래선수 += 1;
       m.set(r.담당, o);
     }
-    return [...m.values()].map((o) => ({ ...o, YTD_달성률: o.목표_26 ? o.YTD / o.목표_26 : null })).sort((a, b) => b.목표_26 - a.목표_26);
+    return [...m.values()].map((o) => ({ ...o, YTD_달성률: o.목표_26 ? o.YTD / o.목표_26 : null })).sort((a, b) => {
+      const order = ['이소진', '김주은', '사키', '김태원'];
+      const r = (o) => (order.indexOf(o) < 0 ? order.length : order.indexOf(o));
+      return r(a.담당) - r(b.담당) || b.목표_26 - a.목표_26;
+    });
   },
 });
 
@@ -832,9 +836,16 @@ dash.calc('by_owner', {
     }
     return m;
   };
+  const OWNER_ORDER = ['이소진', '김주은', '사키', '김태원'];
+  const ownerRank = (o) => { const i = OWNER_ORDER.indexOf(o); return i < 0 ? OWNER_ORDER.length : i; };
+  const byOwner = (a, b) => ownerRank(a) - ownerRank(b);
   const ownerColors = new Map();
   const colorOf = (o) => {
-    if (!ownerColors.has(o)) ownerColors.set(o, dash.colors[(ownerColors.size + 1) % dash.colors.length]);
+    if (!ownerColors.has(o)) {
+      const fixed = { 이소진: 1, 사키: 2, 김태원: 3, 김주은: 4 };
+      const idx = fixed[o] ?? 5 + ownerColors.size;
+      ownerColors.set(o, dash.colors[idx % dash.colors.length]);
+    }
     return ownerColors.get(o);
   };
   const avatar = (o) => {
@@ -929,7 +940,7 @@ dash.calc('by_owner', {
     return list;
   };
   const drawChips = (lat) => {
-    const owners = [...new Set(lat.map((l) => l.담당).filter(Boolean))];
+    const owners = [...new Set(lat.map((l) => l.담당).filter(Boolean))].sort(byOwner);
     $('owner-chips').replaceChildren(...['all', ...owners].map((o) => {
       const b = el('button', 'ie-chip');
       if (o === 'all') b.append(document.createTextNode('전체 '), el('em', '', String(lat.length)));
@@ -968,7 +979,7 @@ dash.calc('by_owner', {
     for (let i = teamIdx, n = 0; i >= 0 && n < S.feedWeeks; i--, n++) {
       const w = weeks[i].week;
       const hs = (byWeek.get(w) || []).filter((h) => keep.has(h.key));
-      const changed = hs.filter((h) => h.변경 !== '동일').sort((a, b) => keep.get(a.key).담당.localeCompare(keep.get(b.key).담당) || a.key.localeCompare(b.key));
+      const changed = hs.filter((h) => h.변경 !== '동일').sort((a, b) => byOwner(keep.get(a.key).담당, keep.get(b.key).담당));
       const same = hs.filter((h) => h.변경 === '동일');
       const sec = el('section', 'ie-fweek');
       const head = el('div', 'ie-fweek-head');
@@ -1075,7 +1086,7 @@ dash.calc('by_owner', {
     thead.append(hr);
     tbl.append(thead);
     const tb = el('tbody');
-    const groups = d3.group(list, (l) => l.거래처);
+    const groups = [...d3.group(list, (l) => l.거래처)].sort((a, b) => byOwner(a[1][0].담당, b[1][0].담당));
     for (const [name, ls] of groups) {
       const p = sheet.get(ls[0].key);
       const parent = rows('sheet').find((r) => r.거래처 === name && r.구분 === '거래선') || p;
@@ -1198,7 +1209,7 @@ dash.calc('by_owner', {
     for (const [t, c] of [['거래처', ''], ['최신 업데이트', 'ie-hide-narrow'], ['26년 목표', ''], ['YTD', ''], ['YTD 달성률', ''], ['월 목표', 'ie-hide-narrow'], ['월 FCST', 'ie-hide-narrow'], ['월 달성률', '']]) hr.append(el('th', c, t));
     const thead = el('thead'); thead.append(hr); tbl.append(thead);
     const tb = el('tbody');
-    const groups = who === 'all' ? [...d3.group(parents, (p) => p.담당)] : [[who, parents]];
+    const groups = who === 'all' ? [...d3.group(parents, (p) => p.담당)].sort((a, b) => byOwner(a[0], b[0])) : [[who, parents]];
     for (const [owner, rs] of groups) {
       if (who === 'all') {
         const g = tot(rs);
@@ -1256,11 +1267,11 @@ dash.calc('by_owner', {
       S.region = 'all';
     }
     // company picker grouped by owner, with summary views on top
-    const ownersList = [...new Set(companies.map((c) => c.owner).filter(Boolean))];
+    const ownersList = [...new Set(companies.map((c) => c.owner).filter(Boolean))].sort(byOwner);
     const sg = document.createElement('optgroup');
     sg.label = '목표 현황 한눈에';
     sg.append(new Option('전체 업체 목표 현황', '@all'), ...ownersList.map((o) => new Option(`${o} 담당 업체 목표 현황`, '@' + o)));
-    sel.replaceChildren(sg, ...[...d3.group(companies, (c) => c.owner)].map(([owner, cs]) => {
+    sel.replaceChildren(sg, ...[...d3.group(companies, (c) => c.owner)].sort((a, b) => byOwner(a[0], b[0])).map(([owner, cs]) => {
       const g = document.createElement('optgroup');
       g.label = owner || '담당 미지정';
       for (const c of cs) {
