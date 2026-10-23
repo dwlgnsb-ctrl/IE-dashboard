@@ -304,6 +304,27 @@ body { background: var(--page-bg); color: var(--color-fg); font-family: var(--fo
 .ie-mx-ph b { font-weight: 700; font-size: 0.95rem; }
 .ie-mx-pbody { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 14px; align-items: start; }
 
+/* history by company */
+.ie-reg-ov { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr)); gap: 8px; }
+.ie-reg-it { background: var(--color-bg); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; align-content: start; min-width: 0; }
+.ie-reg-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ie-reg-h b { font-weight: 700; font-size: 0.92rem; }
+.ie-reg-g { font-size: var(--cds-font-size-caption); color: var(--color-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ie-reg-it .ie-frow-cmt { font-size: 11.5px; }
+.ie-reg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: 10px; align-items: start; }
+.ie-reg-one { display: grid; gap: 10px; }
+.ie-reg-card { border: 1px solid var(--color-border-line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px; background: var(--color-bg); min-width: 0; }
+.ie-reg-card .ie-same summary { color: var(--ie-accent); font-weight: 600; }
+.ie-reg-card .ie-week { margin-top: 10px; }
+
+/* targets overview */
+.ie-tgt td, .ie-tgt th { vertical-align: middle; }
+.ie-tgt-name { display: flex; align-items: center; gap: 8px; }
+.ie-tgt-name b { font-weight: 700; }
+.ie-tgt-name .ie-avatar { width: 26px; height: 26px; font-size: 11px; }
+.ie-tgt-sub td { background: var(--color-bg); font-weight: 600; }
+.ie-tgt td.ie-note { font-size: var(--cds-font-size-caption); }
+
 [data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
 [data-dash-source-state=empty] { color: transparent; }
 .ie-fail { display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); min-height: inherit; }
@@ -368,12 +389,13 @@ body { background: var(--page-bg); color: var(--color-fg); font-family: var(--fo
 
   <section id="history" class="ie-page" role="tabpanel" aria-labelledby="tab-history" hidden>
     <div class="ie-bar ie-toolbar">
-      <select class="ie-select" id="acct" aria-label="거래선 선택" data-source="latest" style="flex: 1 1 16rem"></select>
+      <select class="ie-select" id="acct" aria-label="거래처 선택" data-source="latest" style="flex: 1 1 16rem"></select>
       <select class="ie-select" id="order" aria-label="월 순서">
         <option value="desc">최근 월부터</option>
         <option value="asc">오래된 월부터</option>
       </select>
     </div>
+    <div class="ie-bar ie-toolbar" id="region-chips" role="group" aria-label="권역" data-source="latest"></div>
     <div class="ie-hist" id="hist" data-source="sheet history latest"></div>
   </section>
 
@@ -702,7 +724,7 @@ dash.calc('by_owner', {
 
   const S = {
     tab: 'feed', owner: 'all', q: '', onlyCmt: false, feedWeeks: 3, openRow: null,
-    mxWeeks: 4, mxSel: null,
+    mxWeeks: 4, mxSel: null, region: 'all',
     acct: null, order: 'desc', psort: { k: '목표_26', dir: -1 }, monthOpen: new Set(),
   };
 
@@ -720,7 +742,7 @@ dash.calc('by_owner', {
     draw();
   };
   for (const p of pages) $('tab-' + p).addEventListener('click', () => showTab(p));
-  const goHistory = (key) => { S.acct = key; S.monthOpen.clear(); showTab('history'); root.scrollIntoView({ block: 'start' }); };
+  const goHistory = (key) => { const l = rows('latest').find((x) => x.key === key); S.acct = l ? l.거래처 : key; S.region = 'all'; S.monthOpen.clear(); showTab('history'); root.scrollIntoView({ block: 'start' }); };
 
   // ---------- shared filters ----------
   const redrawList = () => { if (S.tab === 'feed') drawFeed(); if (S.tab === 'matrix') drawMatrix(); };
@@ -759,20 +781,28 @@ dash.calc('by_owner', {
     S.mxSel = S.mxSel === td.dataset.cell ? null : td.dataset.cell;
     drawMatrix();
   });
-  $('acct').addEventListener('change', (e) => { S.acct = e.target.value; S.monthOpen.clear(); drawHistory(); });
+  $('acct').addEventListener('change', (e) => { S.acct = e.target.value; S.region = 'all'; S.monthOpen.clear(); drawHistory(); });
+  $('region-chips').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-region]');
+    if (!b) return;
+    S.region = b.dataset.region;
+    drawHistory();
+  });
+  $('hist').addEventListener('toggle', (e) => {
+    const d = e.target;
+    if (!d.dataset || !d.dataset.openKey) return;
+    if (d.open) S.monthOpen.add(d.dataset.openKey); else S.monthOpen.delete(d.dataset.openKey);
+  }, true);
   $('order').addEventListener('change', (e) => { S.order = e.target.value; drawHistory(); });
   $('hist').addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-company]');
+    if (tr) { S.acct = tr.dataset.company; S.region = 'all'; S.monthOpen.clear(); drawHistory(); root.scrollIntoView && root.scrollIntoView({ block: 'start' }); return; }
     const j = e.target.closest('button[data-jump]');
     if (j) {
       const t = [...$('hist').querySelectorAll('section[data-month]')].find((s) => s.dataset.month === j.dataset.jump);
       if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
-    const b = e.target.closest('button[data-month]');
-    if (!b) return;
-    const m = b.dataset.month;
-    if (S.monthOpen.has(m)) S.monthOpen.delete(m); else S.monthOpen.add(m);
-    drawHistory();
   });
   document.querySelector('#ptable thead').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-sort]');
@@ -784,8 +814,7 @@ dash.calc('by_owner', {
   $('ptbody').addEventListener('click', (e) => {
     const tr = e.target.closest('tr[data-key]');
     if (!tr) return;
-    S.acct = tr.dataset.key;
-    showTab('history');
+    goHistory(tr.dataset.key);
   });
 
   // ---------- helpers ----------
@@ -1120,51 +1149,162 @@ dash.calc('by_owner', {
     if (!list.length) box.append(el('p', 'ie-empty', '조건에 맞는 거래선이 없습니다.'));
   };
 
-  // ---------- history ----------
+  // ---------- 목표 현황 (전체 / 담당자별) ----------
+  const drawTargets = (box, who, companies) => {
+    const sheet = rows('sheet');
+    const parents = sheet.filter((r) => r.구분 === '거래선' && (who === 'all' || r.담당 === who));
+    const lastOf = new Map(companies.map((c) => [c.name, c]));
+    const weeks = weekList();
+    const sum = (rs, f) => d3.sum(rs, (r) => r[f] || 0);
+    const tot = (rs) => {
+      const t = { 목표_26: sum(rs, '목표_26'), YTD: sum(rs, 'YTD'), 월목표: sum(rs, '월목표'), 월FCST: sum(rs, '월FCST') };
+      t.YTD_달성률 = t.목표_26 ? t.YTD / t.목표_26 : null;
+      t.월_달성률 = t.월목표 ? t.월FCST / t.월목표 : null;
+      return t;
+    };
+    const T = tot(parents);
+    const acct = el('div', 'ie-acct');
+    const top = el('div', 'ie-acct-top');
+    const tt = el('div');
+    tt.append(el('h2', '', who === 'all' ? 'IE팀 전체 목표 현황' : `${who} 담당 목표 현황`));
+    const meta = el('div', 'ie-meta');
+    meta.append(el('span', 'ie-badge', `거래처 ${parents.length}곳`));
+    if (who === 'all') meta.append(el('span', '', `담당자 ${new Set(parents.map((p) => p.담당)).size}명`));
+    tt.append(meta);
+    if (who !== 'all') top.append(avatar(who));
+    top.append(tt);
+    acct.append(top);
+    const nums = el('div', 'ie-nums');
+    const add = (label, v) => { const n = el('div', 'ie-num'); n.append(el('span', '', label), el('b', '', v)); nums.append(n); };
+    add('26년 목표', eok(T.목표_26)); add('YTD', eok(T.YTD)); add('YTD 달성률', fmtPct(T.YTD_달성률));
+    add('월 목표', eok(T.월목표)); add('월 FCST', eok(T.월FCST)); add('월 달성률', fmtPct(T.월_달성률));
+    acct.append(nums);
+
+    const bar = (v) => {
+      const s = el('span', 'ie-ach');
+      const t = el('span', 'ie-track');
+      const f = el('span', 'ie-fill' + (v !== null && v < 0.5 ? ' is-low' : ''));
+      f.style.width = Math.min(1, v || 0) * 100 + '%';
+      t.append(f);
+      s.append(t, el('span', '', fmtPct(v)));
+      return s;
+    };
+    const card = el('div', 'ie-pcard');
+    card.append(el('h3', 'ie-section-title', '업체별 목표'));
+    card.append(el('p', 'ie-note', '단위 억원 · 목표 큰 순 · 업체를 누르면 해당 업체 월별 히스토리로 이동합니다'));
+    const wrap = el('div', 'ie-tablebox');
+    const tbl = el('table', 'ie-table ie-tgt');
+    const hr = el('tr');
+    for (const [t, c] of [['거래처', ''], ['최신 업데이트', 'ie-hide-narrow'], ['26년 목표', ''], ['YTD', ''], ['YTD 달성률', ''], ['월 목표', 'ie-hide-narrow'], ['월 FCST', 'ie-hide-narrow'], ['월 달성률', '']]) hr.append(el('th', c, t));
+    const thead = el('thead'); thead.append(hr); tbl.append(thead);
+    const tb = el('tbody');
+    const groups = who === 'all' ? [...d3.group(parents, (p) => p.담당)] : [[who, parents]];
+    for (const [owner, rs] of groups) {
+      if (who === 'all') {
+        const g = tot(rs);
+        const tr = el('tr', 'ie-tgt-sub');
+        const n = el('td');
+        const nn = el('div', 'ie-tgt-name');
+        nn.append(avatar(owner), el('b', '', `${owner} 소계`), el('span', 'ie-note', `${rs.length}곳`));
+        n.append(nn);
+        const a1 = el('td'); a1.append(bar(g.YTD_달성률));
+        const a2 = el('td'); a2.append(bar(g.월_달성률));
+        tr.append(n, el('td', 'ie-hide-narrow', ''), el('td', '', eok(g.목표_26)), el('td', '', eok(g.YTD)), a1, el('td', 'ie-hide-narrow', eok(g.월목표)), el('td', 'ie-hide-narrow', eok(g.월FCST)), a2);
+        tb.append(tr);
+      }
+      for (const r of rs.slice().sort((a, b) => (b.목표_26 || 0) - (a.목표_26 || 0))) {
+        const tr = el('tr', 'ie-click');
+        tr.dataset.company = r.거래처;
+        const c = lastOf.get(r.거래처);
+        const n = el('td');
+        const nn = el('div', 'ie-tgt-name');
+        nn.append(el('b', '', r.거래처));
+        if (c && c.ls.length > 1) nn.append(el('span', 'ie-note', `${c.ls.length}개 권역`));
+        n.append(nn);
+        const lw = c && c.last >= 0 ? weeks[c.last].week : '—';
+        const a1 = el('td'); a1.append(bar(r.YTD_달성률));
+        const a2 = el('td'); a2.append(bar(r.월_달성률));
+        tr.append(n, el('td', 'ie-hide-narrow ie-note', lw), el('td', '', eok(r.목표_26)), el('td', '', eok(r.YTD)), a1, el('td', 'ie-hide-narrow', eok(r.월목표)), el('td', 'ie-hide-narrow', eok(r.월FCST)), a2);
+        tb.append(tr);
+      }
+    }
+    tbl.append(tb);
+    wrap.append(tbl);
+    card.append(wrap);
+    box.replaceChildren(acct, card);
+  };
+
+  // ---------- history (거래처 단위) ----------
   const drawHistory = () => {
     const box = $('hist');
     const sel = $('acct');
-    if (failOrSkel(box, ['sheet', 'history', 'latest'])) { sel.replaceChildren(); return; }
+    if (failOrSkel(box, ['sheet', 'history', 'latest'])) { sel.replaceChildren(); $('region-chips').replaceChildren(); return; }
     const lat = rows('latest');
     const sheet = rows('sheet');
     const weeks = weekList();
+    const widx = new Map(weeks.map((w, i) => [w.week, i]));
     const hm = histMap();
-    if (!S.acct || !lat.some((l) => l.key === S.acct)) {
-      const widx = new Map(weeks.map((w, i) => [w.week, i]));
-      const first = lat.filter((l) => l.최신주차 !== null).sort((a, b) => widx.get(b.최신주차) - widx.get(a.최신주차))[0];
-      S.acct = first ? first.key : lat[0] && lat[0].key;
+    const companies = [...d3.group(lat, (l) => l.거래처)].map(([name, ls]) => {
+      const last = d3.max(ls, (l) => (l.최신주차 ? widx.get(l.최신주차) : -1));
+      return { name, ls, owner: ls[0].담당, last };
+    });
+    const isSummary = typeof S.acct === 'string' && S.acct.startsWith('@');
+    $('order').hidden = isSummary;
+    if (!isSummary && (!S.acct || !companies.some((c) => c.name === S.acct))) {
+      const first = companies.slice().sort((a, b) => b.last - a.last)[0];
+      S.acct = first ? first.name : null;
+      S.region = 'all';
     }
-    // account picker grouped by owner
-    const groups = d3.group(lat, (l) => l.담당);
-    sel.replaceChildren(...[...groups].map(([owner, ls]) => {
+    // company picker grouped by owner, with summary views on top
+    const ownersList = [...new Set(companies.map((c) => c.owner).filter(Boolean))];
+    const sg = document.createElement('optgroup');
+    sg.label = '목표 현황 한눈에';
+    sg.append(new Option('전체 업체 목표 현황', '@all'), ...ownersList.map((o) => new Option(`${o} 담당 업체 목표 현황`, '@' + o)));
+    sel.replaceChildren(sg, ...[...d3.group(companies, (c) => c.owner)].map(([owner, cs]) => {
       const g = document.createElement('optgroup');
       g.label = owner || '담당 미지정';
-      for (const l of ls) {
-        const o = new Option(`${l.key}${l.최신주차 ? '  ·  ' + l.최신주차 : '  ·  기록 없음'}`, l.key);
-        g.append(o);
+      for (const c of cs) {
+        const lastWeek = c.last >= 0 ? weeks[c.last].week : '기록 없음';
+        g.append(new Option(`${c.name}${c.ls.length > 1 ? ` (${c.ls.length}개 권역)` : ''}  ·  ${lastWeek}`, c.name));
       }
       return g;
     }));
     sel.value = S.acct;
+    if (isSummary) { $('region-chips').replaceChildren(); drawTargets(box, S.acct.slice(1), companies); return; }
+    const co = companies.find((c) => c.name === S.acct);
+    if (!co) { box.replaceChildren(el('p', 'ie-empty', '거래선이 없습니다.')); return; }
+    const multi = co.ls.length > 1;
+    const regName = (l) => l.채널 || l.거래처;
 
-    const l = lat.find((x) => x.key === S.acct);
-    const r = sheet.find((x) => x.key === S.acct);
-    const parent = r && r.구분 === '하위 채널' ? sheet.find((x) => x.거래처 === r.거래처 && x.구분 === '거래선') : r;
-    const km = hm.get(S.acct) || new Map();
+    // region chips
+    const rc = $('region-chips');
+    if (!co.ls.some((l) => l.key === S.region)) S.region = 'all';
+    if (multi) {
+      rc.replaceChildren(...[{ key: 'all', label: '전체 권역' }, ...co.ls.map((l) => ({ key: l.key, label: regName(l), l }))].map((x) => {
+        const b = el('button', 'ie-chip');
+        if (x.l) b.append(stateDot(x.l));
+        b.append(document.createTextNode(x.label));
+        b.dataset.region = x.key;
+        b.setAttribute('aria-pressed', String(S.region === x.key));
+        return b;
+      }));
+    } else rc.replaceChildren();
+    const shown = S.region === 'all' ? co.ls : co.ls.filter((l) => l.key === S.region);
 
+    // header
+    const parent = sheet.find((x) => x.거래처 === co.name && x.구분 === '거래선');
     const acct = el('div', 'ie-acct');
     acct.id = 'account';
     const top = el('div', 'ie-acct-top');
     const tt = el('div');
-    tt.append(el('h2', '', l.거래처 + (l.채널 ? ' · ' + l.채널 : '')));
+    tt.append(el('h2', '', co.name));
     const meta = el('div', 'ie-meta');
+    meta.append(el('span', '', [co.owner, co.ls[0].권역, parent && parent.Status, parent && parent.Class ? 'Class ' + parent.Class : '', parent && parent.Type].filter(Boolean).join(' · ')));
+    if (multi) meta.append(el('span', 'ie-badge', `권역 ${co.ls.length}개`));
+    if (co.last >= 0) meta.append(el('span', 'ie-badge' + (weeks[co.last].week === lat[0].팀최신주차 ? ' is-new' : ' is-acc'), '최신 ' + weeks[co.last].week));
     tt.append(meta);
-    top.append(avatar(l.담당), tt);
-    meta.append(el('span', '', [l.담당, l.권역, l.Status, r && r.Class ? 'Class ' + r.Class : '', r && r.Type].filter(Boolean).join(' · ')));
-    if (l.최신주차) meta.append(el('span', 'ie-badge' + (l.주차지연 === 0 ? ' is-new' : ''), '최신 ' + l.최신주차));
-    meta.append(el('span', 'ie-badge', `기록 ${l.기록주수}주`));
+    top.append(avatar(co.owner), tt);
     acct.append(top);
-
     if (parent) {
       const nums = el('div', 'ie-nums');
       const add = (label, v) => { const n = el('div', 'ie-num'); n.append(el('span', '', label), el('b', '', v)); nums.append(n); };
@@ -1175,71 +1315,92 @@ dash.calc('by_owner', {
       add('월 FCST', eok(parent.월FCST));
       add('월 달성률', fmtPct(parent.월_달성률));
       acct.append(nums);
-      if (parent !== r) acct.append(el('p', 'ie-note', `실적은 상위 거래선 ${parent.거래처} 기준입니다.`));
     }
-    if (l.코멘트) {
-      const cm = el('div', 'ie-cmt');
-      cm.append(el('div', 'ie-cmt-label', '상무님 코멘트'), el('p', 'ie-text', l.코멘트));
-      acct.append(cm);
-    }
+    // region status overview + comments
+    if (multi) {
+      const ov = el('div', 'ie-reg-ov');
+      for (const l of shown) {
+        const it = el('div', 'ie-reg-it');
+        const h = el('div', 'ie-reg-h');
+        h.append(stateDot(l), el('b', '', regName(l)), el('span', 'ie-note', l.최신주차 || '기록 없음'));
+        it.append(h);
+        const lastH = l.최신주차 ? (hm.get(l.key) || new Map()).get(l.최신주차) : null;
+        it.append(el('div', 'ie-reg-g', lastH ? lastH.요지 : '—'));
+        if (l.코멘트) {
+          const c = el('div', 'ie-frow-cmt');
+          c.append(el('span', 'ie-frow-cmt-k', '상무님'), el('span', 'ie-reg-c', l.코멘트.replace(/\s+/g, ' ')));
+          it.append(c);
+        }
+        ov.append(it);
+      }
+      acct.append(el('span', 'ie-note', '권역별 최신 현황'), ov);
+    } else if (co.ls[0].코멘트) acct.append(cmtBox(co.ls[0].코멘트));
+
     // month jump list
-    const jm = [...new Set(weeks.map((w) => w.month))].map((m) => {
-      const ws = weeks.filter((w) => w.month === m && km.has(w.week));
-      return { m, n: ws.length, c: ws.filter((w) => km.get(w.week).변경 !== '동일').length };
-    }).filter((x) => x.n);
-    if (jm.length) {
+    const months = [...new Set(weeks.map((w) => w.month))];
+    const monthData = months.map((m) => {
+      const ws = weeks.filter((w) => w.month === m);
+      const regs = shown.map((l) => {
+        const km = hm.get(l.key) || new Map();
+        const es = ws.filter((w) => km.has(w.week)).map((w) => km.get(w.week));
+        return { l, es };
+      }).filter((x) => x.es.length);
+      return { m, regs, n: d3.sum(regs, (x) => x.es.length), c: d3.sum(regs, (x) => x.es.filter((e) => e.변경 !== '동일').length) };
+    }).filter((x) => x.regs.length);
+    const ordered = S.order === 'desc' ? monthData.slice().reverse() : monthData;
+    if (ordered.length) {
       const jp = el('div', 'ie-jump');
       jp.append(el('span', 'ie-note', '월별 기록 · 누르면 해당 월로 이동합니다'));
       const jl = el('div', 'ie-jump-list');
-      for (const x of (S.order === 'desc' ? jm.slice().reverse() : jm)) {
+      for (const x of ordered) {
         const b = el('button');
         b.dataset.jump = x.m;
-        b.append(el('b', '', x.m), document.createTextNode(`${x.n}주 작성 · 변경 ${x.c}주`));
+        b.append(el('b', '', x.m), document.createTextNode(multi ? `${x.regs.length}개 권역 · 변경 ${x.c}건` : `${x.n}주 작성 · 변경 ${x.c}주`));
         jl.append(b);
       }
       jp.append(jl);
       acct.append(jp);
     }
 
-    // months
-    const months = [...new Set(weeks.map((w) => w.month))];
-    const ordered = S.order === 'desc' ? months.slice().reverse() : months;
-    const sections = [];
-    for (const m of ordered) {
-      const ws = weeks.filter((w) => w.month === m && km.has(w.week)).map((w) => km.get(w.week));
-      if (!ws.length) continue;
+    // month sections: each region's month-end entry side by side
+    const sections = ordered.map((x) => {
       const sec = el('section', 'ie-month');
-      sec.dataset.month = m;
+      sec.dataset.month = x.m;
       const head = el('div', 'ie-month-head');
-      const changed = ws.filter((x) => x.변경 !== '동일').length;
-      head.append(el('h3', '', m));
-      head.append(el('span', 'ie-note', `기록 ${ws.length}주 · 내용 변경 ${changed}회 · 월말 기준 ${ws[ws.length - 1].주차}`));
+      head.append(el('h3', '', x.m));
+      head.append(el('span', 'ie-note', multi ? `기록 있는 권역 ${x.regs.length}개 · 내용 변경 ${x.c}건` : `기록 ${x.n}주 · 내용 변경 ${x.c}회`));
       sec.append(head);
-      const all = S.monthOpen.has(m);
-      const inOrder = ws.slice().reverse();
-      inOrder.forEach((x, i) => {
-        const wk = el('div', 'ie-week' + (i === 0 ? ' is-last' : ''));
-        const wh = el('div', 'ie-week-head');
-        wh.append(el('span', '', x.주차));
-        wh.append(el('span', 'ie-badge' + (x.변경 === '동일' ? '' : ' is-new'), i === 0 ? (x.변경 === '동일' ? '월말 · 직전 주와 동일' : '월말 기준') : x.변경 === '동일' ? '직전 주와 동일' : x.변경));
-        wk.append(wh);
-        if (i === 0 || all) wk.append(rich(x.업무));
-        else {
-          const d = document.createElement('details');
-          const s = document.createElement('summary');
-          s.append(el('span', '', (x.업무.split('\n').find((t) => t.trim()) || '내용 보기').replace(/^[▶■'\s]+/, '')));
-          d.append(s, rich(x.업무));
-          wk.append(d);
+      const grid = el('div', multi ? 'ie-reg-grid' : 'ie-reg-one');
+      for (const { l, es } of x.regs) {
+        const card = el('div', 'ie-reg-card');
+        const last = es[es.length - 1];
+        const ch = el('div', 'ie-reg-h');
+        if (multi) ch.append(el('b', '', regName(l)));
+        ch.append(el('span', 'ie-badge' + (last.변경 === '동일' ? '' : ' is-acc'), `월말 ${last.주차}`));
+        if (last.변경 === '동일') ch.append(el('span', 'ie-note', '직전 주와 동일'));
+        card.append(ch, rich(last.업무));
+        const earlier = es.slice(0, -1).reverse();
+        if (earlier.length) {
+          const d = el('details', 'ie-same');
+          const openKey = x.m + '|' + l.key;
+          if (S.monthOpen.has(openKey)) d.open = true;
+          d.dataset.openKey = openKey;
+          d.append(el('summary', '', `이 달 다른 주 ${earlier.length}개 보기`));
+          for (const e of earlier) {
+            const wk = el('div', 'ie-week');
+            const wh = el('div', 'ie-week-head');
+            wh.append(el('span', '', e.주차), el('span', 'ie-badge' + (e.변경 === '동일' ? '' : ' is-new'), e.변경 === '동일' ? '직전 주와 동일' : e.변경));
+            wk.append(wh);
+            if (e.변경 !== '동일') wk.append(rich(e.업무));
+            d.append(wk);
+          }
+          card.append(d);
         }
-        sec.append(wk);
-      });
-      if (ws.length > 1) {
-        const b = el('button', 'ie-more', all ? '월말만 크게 보기' : '이 달 모두 펼치기');
-        b.dataset.month = m;
-        sec.append(b);
+        grid.append(card);
       }
-      sections.push(sec);
-    }
+      sec.append(grid);
+      return sec;
+    });
     const ms = el('div', 'ie-months');
     ms.append(...sections);
     box.replaceChildren(acct, ms);
